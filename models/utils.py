@@ -3,6 +3,31 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import random
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix    
+
+PALETTE = {
+    'train':  '#2E86AB',
+    'valid':  '#E84855',
+    'bg':     '#F8F9FA',
+    'grid':   '#E0E0E0',
+}
+
+plt.rcParams.update({
+    'figure.facecolor':  PALETTE['bg'],
+    'axes.facecolor':    PALETTE['bg'],
+    'axes.spines.top':   False,
+    'axes.spines.right': False,
+    'axes.grid':         True,
+    'grid.color':        PALETTE['grid'],
+    'grid.linestyle':    '--',
+    'grid.alpha':        0.7,
+    'font.family':       'sans-serif',
+    'axes.titlesize':    13,
+    'axes.labelsize':    11,
+    'legend.frameon':    False,
+})
 
 def set_seed(seed=42):
 
@@ -168,3 +193,158 @@ def train(model, train_loader, valid_loader, criterion, optimizer, device=None, 
 
     print(f"Best validation accuracy: {best_acc:.4f}")
     return metrics_history
+
+
+
+def predict(model, dataloader, device):
+
+    '''
+    Run predictions on a dataloader.
+
+    Args:
+        model (torch.nn.Module): Trained PyTorch model.
+        dataloader (DataLoader): DataLoader with input samples.
+        device (torch.device): Device to run the model on.
+
+    Returns:
+        tuple: (predictions, true_labels, probabilities) as NumPy arrays
+    '''
+
+    model.eval()
+    all_predictions, all_labels, all_probabilities = [], [], []
+
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            probs = torch.softmax(outputs, dim=1)
+            preds = probs.argmax(dim=1)
+
+            all_predictions.append(preds.cpu())
+            all_labels.append(labels)
+            all_probabilities.append(probs.cpu())
+
+    all_predictions = torch.cat(all_predictions).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+    all_probabilities = torch.cat(all_probabilities).numpy()
+
+    return all_predictions, all_labels, all_probabilities
+
+def predict_batch(model, dataloader, device):
+
+    '''
+    Run predictions on a single batch.
+
+    Args:
+        model (torch.nn.Module): Trained PyTorch model.
+        dataloader (DataLoader): DataLoader with input samples.
+        device (torch.device): Device to run the model on.
+
+    Returns:
+        tuple: (predictions, true_labels, probabilities) as NumPy arrays
+
+    '''
+    model.eval()
+    inputs, labels = next(iter(dataloader))
+    inputs = inputs.to(device)
+
+    with torch.no_grad():
+        outputs = model(inputs)
+        probs   = torch.softmax(outputs, dim=1)
+        preds   = probs.argmax(dim=1)
+
+    return preds.cpu().numpy(), labels.numpy(), probs.cpu().numpy(), inputs.cpu()
+
+
+def plot_training_history(metrics_history):
+
+    '''
+    Plot training and validation loss and accuracy over epochs.
+
+    This function creates a side-by-side plot:
+      - Left: Training and validation loss
+      - Right: Validation accuracy with the best epoch highlighted
+
+    Args:
+        metrics_history (dict): Dictionary containing training metrics with keys:
+            - 'train_loss' (list or np.ndarray): Training loss per epoch
+            - 'valid_loss' (list or np.ndarray): Validation loss per epoch
+            - 'valid_acc'  (list or np.ndarray): Validation accuracy per epoch
+    '''
+
+    epochs     = range(1, len(metrics_history['train_loss']) + 1)
+    best_epoch = int(np.argmax(metrics_history['valid_acc'])) + 1
+    best_acc   = max(metrics_history['valid_acc'])
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle('Training History', fontsize=15, fontweight='bold', y=1.02)
+
+    ax1.plot(epochs, metrics_history['train_loss'],
+             color=PALETTE['train'], linewidth=2, label='Training Loss')
+    ax1.plot(epochs, metrics_history['valid_loss'],
+             color=PALETTE['valid'], linewidth=2, linestyle='--', label='Validation Loss')
+    ax1.set_title('Loss')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+
+    ax2.plot(epochs, metrics_history['valid_acc'],
+             color=PALETTE['valid'], linewidth=2, label='Validation Accuracy')
+    ax2.axvline(best_epoch, color='gray', linestyle=':', linewidth=1.5)
+    ax2.scatter([best_epoch], [best_acc], color=PALETTE['valid'], zorder=5)
+    ax2.annotate(f'best: {best_acc:.3f}',
+                 xy=(best_epoch, best_acc),
+                 xytext=(8, -15), textcoords='offset points',
+                 fontsize=9, color='gray')
+    ax2.set_title('Validation Accuracy')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_sample_predictions(model, dataloader, device):
+
+    '''
+    Plot sample images from a dataloader with their predicted and true labels.
+
+    This function selects the first batch from the dataloader, runs predictions
+    using the model, and displays a grid of sample images annotated with true and predicted label.
+
+    Args:
+        model (torch.nn.Module): Trained PyTorch model.
+        dataloader (torch.utils.data.DataLoader): DataLoader providing the images.
+        device (torch.device): Device to run the model on.
+
+    '''
+
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                    'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    preds, labels, probs, inputs = predict_batch(model, dataloader, device)
+
+    mean = torch.tensor([0.47889522, 0.47227842, 0.43047404]).view(3, 1, 1)
+    std  = torch.tensor([0.24205776, 0.23828046, 0.25874835]).view(3, 1, 1)
+    inputs = (inputs.cpu() * std + mean).clamp(0, 1)
+
+    fig, axes = plt.subplots(4, 4, figsize=(12, 12))
+    fig.suptitle('Sample Predictions', fontsize=15, fontweight='bold')
+
+    for i, ax in enumerate(axes.flat):
+        img  = inputs[i].permute(1, 2, 0).numpy()
+        true = class_names[labels[i]]
+        pred = class_names[preds[i]]
+        prob = probs[i, preds[i]]
+
+        ax.imshow(img)
+        ax.set_title(f'T: {true}\nP: {pred} ({prob:.0%})',
+                     color=PALETTE['train'] if true == pred else PALETTE['valid'],
+                     fontsize=8)
+        ax.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+
+# TO DO: confusion matrix

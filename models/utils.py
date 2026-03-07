@@ -15,7 +15,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, seed=42):
+def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, seed=42):
 
     '''
     Create DataLoaders for training, validation, and test datasets.
@@ -25,6 +25,7 @@ def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, seed=42):
         valid_dir (str): Directory containing validation images.
         test_dir (str): Directory containing test images.
         batch_size (int): Batch size for DataLoaders.
+        image_size (int): Size of the input images (default: 224 for 224x224 images).
         seed (int): Random seed for reproducibility.
 
     Returns:
@@ -38,7 +39,7 @@ def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, seed=42):
     cinic_std_RGB = [0.24205776, 0.23828046, 0.25874835]
 
     transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+        transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=cinic_mean_RGB, std=cinic_std_RGB)
     ])

@@ -28,9 +28,8 @@ class BaselineCNN(nn.Module):
 
         #constructing convolutional layers
         for output_channels, kernel_size in zip(conv_channels, kernel_sizes):
-            convolutional_layers.append(
-                nn.Conv2d(in_channels, output_channels, kernel_size=kernel_size, padding=1)
-            )
+            convolutional_layers.append(nn.Conv2d(in_channels, output_channels, kernel_size=kernel_size, padding=1))
+            convolutional_layers.append(nn.BatchNorm2d(output_channels))
             convolutional_layers.append(nn.ReLU())
             convolutional_layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
             in_channels = output_channels

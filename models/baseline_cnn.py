@@ -3,7 +3,7 @@ import torch.nn as nn
 
 class BaselineCNN(nn.Module):
 
-    def __init__(self, input_channels : int = 3,image_size : int = 224, conv_channels : list = [32, 64, 128], 
+    def __init__(self, input_channels : int = 3, image_size : int = 224, conv_channels : list = [32, 64, 128], 
                  kernel_sizes : list = [3, 3, 3], fc_layers : list = [128], dropout=0.0,
                  num_classes : int = 10):
         
@@ -35,14 +35,10 @@ class BaselineCNN(nn.Module):
             in_channels = output_channels
 
         self.conv = nn.Sequential(*convolutional_layers)
+        self.global_pool = nn.AdaptiveAvgPool2d((1,1))
 
-        #size of the feature map after convolutional layers, assuming input images are image_size x image_size
-        #the size is reduced by a factor of 2 after each MaxPool2d layer
-        self.feature_map_size = image_size // (2 ** len(conv_channels))
-
-        #number of features after flattening the output of the convolutional layers
-        conv_output_features = in_channels * (self.feature_map_size ** 2)
-
+        conv_output_features = in_channels
+        
         fully_connected_layers = []
         in_features = conv_output_features
 
@@ -73,7 +69,7 @@ class BaselineCNN(nn.Module):
         '''
 
         x = self.conv(x)
-        #flatten the output of the convolutional layers for the fully connected layers
+        x = self.global_pool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x

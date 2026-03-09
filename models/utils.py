@@ -5,7 +5,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix    
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 PALETTE = {
     'train':  '#2E86AB',
@@ -156,7 +156,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
 
 def train(model, train_loader, valid_loader, criterion, optimizer, device=None, \
-          num_epochs=20, verbose=True, verbose_interval=1):
+          num_epochs=20, verbose=True, verbose_interval=1, checkpoint_name=None):
     
     '''
     Train the model over multiple epochs and track training/validation metrics.
@@ -189,7 +189,14 @@ def train(model, train_loader, valid_loader, criterion, optimizer, device=None, 
 
         if valid_acc > best_acc:
             best_acc = valid_acc
-            torch.save(model.state_dict(), 'best_cnn_model.pth')
+            if checkpoint_name is None:
+                checkpoint_name='best_checkpoint'
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'valid_acc': valid_acc
+            }, f'{checkpoint_name}.pth')
 
     print(f"Best validation accuracy: {best_acc:.4f}")
     return metrics_history
@@ -244,6 +251,7 @@ def predict_batch(model, dataloader, device):
         tuple: (predictions, true_labels, probabilities) as NumPy arrays
 
     '''
+
     model.eval()
     inputs, labels = next(iter(dataloader))
     inputs = inputs.to(device)
@@ -254,6 +262,44 @@ def predict_batch(model, dataloader, device):
         preds   = probs.argmax(dim=1)
 
     return preds.cpu().numpy(), labels.numpy(), probs.cpu().numpy(), inputs.cpu()
+
+def evaluate_model(model, dataloader, criterion, device):
+
+    '''
+    Compute accuracy and loss for given criterion for the dataloader (train/test/set)
+
+    Args:
+        model (torch.nn.Module): Trained PyTorch model.
+        dataloader (DataLoader): DataLoader with input samples.
+        criterion (torch.nn): Loss function
+        device (torch.device): Device to run the model on.
+
+    Returns:
+        tuple: (accuracy, average loss) as floats
+
+    '''
+
+    model.eval()
+    running_loss = 0.0
+    all_predictions, all_labels = [], []
+    
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            running_loss += loss.item() * inputs.size(0)
+
+            predictions = outputs.argmax(dim=1)
+            all_predictions.append(predictions.cpu())
+            all_labels.append(labels.cpu())
+        
+        all_predictions = torch.cat(all_predictions)
+        all_labels = torch.cat(all_labels)
+        accuracy = (all_predictions == all_labels).float().mean().item()
+        avg_loss = running_loss / len(dataloader.dataset)
+
+    return accuracy, avg_loss
 
 
 def plot_training_history(metrics_history):
@@ -347,4 +393,85 @@ def plot_sample_predictions(model, dataloader, device):
     plt.show()
 
 
-# TO DO: confusion matrix
+def plot_confusion_matrix(model, dataloader, device):
+
+    '''
+    Compute and plot confusion matrix for the given model and dataloader.
+
+    Args:
+        model (torch.nn.Module): Trained PyTorch model.
+        dataloader (torch.utils.data.DataLoader): DataLoader providing the images.
+        device (torch.device): Device to run the model on.
+
+    '''
+
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                    'dog', 'frog', 'horse', 'ship', 'truck']
+
+    y_pred, y_true, _ = predict(model, dataloader, device)
+
+    cm = confusion_matrix(y_true, y_pred)
+    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] #normalization
+
+    plt.figure(figsize=(8, 6), facecolor=PALETTE['bg'])
+    sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names,
+                linewidths=1, linecolor=PALETTE['grid'], cbar=True)
+
+    plt.title('Normalized Confusion Matrix', fontsize=15, fontweight='bold')
+    plt.xlabel('Predicted label', fontsize=12)
+    plt.ylabel('True label', fontsize=12)
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    plt.grid(False) 
+    plt.tight_layout()
+    plt.show()
+
+
+
+def plot_cumulative_training_history(all_metrics_history):
+
+    '''
+    Plot cumulative training history for multiple models.
+    '''
+
+    sns.set_style("whitegrid")
+    num_models = len(all_metrics_history)
+    palette = sns.color_palette("Set2", n_colors=num_models)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    fig.suptitle('Cumulative Training History', fontsize=18, fontweight='bold', y=1.05)
+
+    for idx, (model_name, metrics_history) in enumerate(all_metrics_history.items()):
+        color = palette[idx]
+        epochs = range(1, len(metrics_history['train_loss']) + 1)
+
+        ax1.plot(epochs, metrics_history['train_loss'], color=color, linewidth=2, label=f'{model_name} Train')
+        ax1.plot(epochs, metrics_history['valid_loss'], color=color, linewidth=2, linestyle='--', label=f'{model_name} Valid')
+
+    ax1.set_title('Training & Validation Loss', fontsize=14, fontweight='bold')
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('Loss', fontsize=12)
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+
+    for idx, (model_name, metrics_history) in enumerate(all_metrics_history.items()):
+        color = palette[idx]
+        epochs = range(1, len(metrics_history['valid_acc']) + 1)
+        best_epoch = int(np.argmax(metrics_history['valid_acc'])) + 1
+        best_acc = max(metrics_history['valid_acc'])
+
+        ax2.plot(epochs, metrics_history['valid_acc'], color=color, linewidth=2, label=f'{model_name}')
+        ax2.axvline(best_epoch, color=color, linestyle=':', linewidth=1.5, alpha=0.5)
+        ax2.scatter([best_epoch], [best_acc], color=color, zorder=5)
+        ax2.text(best_epoch + 0.5, best_acc, f'{best_acc:.2f}', color=color, fontsize=9)
+
+    ax2.set_title('Validation Accuracy', fontsize=14, fontweight='bold')
+    ax2.set_xlabel('Epoch', fontsize=12)
+    ax2.set_ylabel('Accuracy', fontsize=12)
+    ax2.set_ylim(0, 1)
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
+
+    plt.tight_layout()
+    plt.show()

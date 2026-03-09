@@ -1,3 +1,4 @@
 data/
 data_subset/
 .DS_Store
+models/trained_models

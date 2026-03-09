@@ -155,7 +155,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
     return epoch_loss, epoch_acc
 
 
-def train(model, train_loader, valid_loader, criterion, optimizer, device=None, \
+def train(model, train_loader, valid_loader, criterion, optimizer, scheduler=None, device=None, \
           num_epochs=20, verbose=True, verbose_interval=1, checkpoint_name=None):
     
     '''
@@ -174,8 +174,13 @@ def train(model, train_loader, valid_loader, criterion, optimizer, device=None, 
 
     for epoch in range(num_epochs):
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
-    
         valid_loss, valid_acc = evaluate_epoch(model, valid_loader, criterion, device)
+
+        if scheduler is not None:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(valid_loss)
+            else:
+                scheduler.step()
         
         metrics_history['train_loss'].append(train_loss)
         metrics_history['valid_loss'].append(valid_loss)
@@ -195,8 +200,12 @@ def train(model, train_loader, valid_loader, criterion, optimizer, device=None, 
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                'metrics_history': metrics_history,
                 'valid_acc': valid_acc
             }, f'{checkpoint_name}.pth')
+
+    torch.save(metrics_history, f"{checkpoint_name}_training_history.pth")
 
     print(f"Best validation accuracy: {best_acc:.4f}")
     return metrics_history

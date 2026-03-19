@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
     
 class ModifiedAlexNet(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=10, droput = 0.5):
         super().__init__()
 
         self.layer1 = nn.Sequential(
@@ -39,13 +39,13 @@ class ModifiedAlexNet(nn.Module):
         )   # 8x8 -> pool -> 4x4
 
         self.fc = nn.Sequential(
-            nn.Dropout(0.5),
+            nn.Dropout(droput),
             nn.Linear(256 * 4 * 4, 1024),
             nn.ReLU(),
         )
 
         self.fc1 = nn.Sequential(
-            nn.Dropout(0.5),
+            nn.Dropout(droput),
             nn.Linear(1024, 512),
             nn.ReLU(),
         )

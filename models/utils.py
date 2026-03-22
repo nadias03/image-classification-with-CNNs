@@ -5,14 +5,14 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, roc_auc_score, confusion_matrix
 
 from models.advanced_augmentation import mixup_data, cutmix_data
 
 PALETTE = {
     'train':  '#2E86AB',
     'valid':  '#E84855',
-    'bg':     '#F8F9FA',
+    'bg':     '#FFFFFF',
     'grid':   '#E0E0E0',
 }
 
@@ -547,3 +547,75 @@ def plot_cumulative_training_history(all_metrics_history):
 
     plt.tight_layout()
     plt.show()
+
+
+@torch.no_grad()
+def get_ensemble_predictions(ensemble, loader, device):
+    all_targets = []
+    for _, targets in loader:
+        all_targets.append(targets)
+    y_true = torch.cat(all_targets).numpy()
+
+    y_pred = ensemble.predict(loader).numpy()
+
+    if ensemble.voting == "soft":
+        all_probs = []
+        for inputs, _ in loader:
+            inputs = inputs.to(ensemble.device).float()
+            proba_sum = None
+            for model in ensemble.models.values():
+                model.to(ensemble.device)
+                outputs = model(inputs)
+                probs = torch.softmax(outputs, dim=1)
+                proba_sum = probs if proba_sum is None else proba_sum + probs
+            avg_probs = proba_sum / len(ensemble.models)
+            all_probs.append(avg_probs.cpu())
+        y_proba = torch.cat(all_probs).numpy()
+    else:
+        y_proba = None
+
+    return y_true, y_pred, y_proba
+
+@torch.no_grad()
+def get_predictions(model, loader, device):
+    model.eval()
+    
+    all_preds = []
+    all_probs = []
+    all_targets = []
+
+    for inputs, targets in loader:
+        inputs = inputs.to(device)
+        targets = targets.to(device)
+
+        outputs = model(inputs)
+        probs = torch.softmax(outputs, dim=1)
+        preds = torch.argmax(probs, dim=1)
+
+        all_preds.append(preds.cpu())
+        all_probs.append(probs.cpu())
+        all_targets.append(targets.cpu())
+
+    y_pred = torch.cat(all_preds).numpy()
+    y_proba = torch.cat(all_probs).numpy()
+    y_true = torch.cat(all_targets).numpy()
+
+    return y_true, y_pred, y_proba
+
+def calculate_metrics(y_true, y_preds, y_proba=None):
+    acc = accuracy_score(y_true, y_preds)
+    f1 = f1_score(y_true, y_preds, average="macro")
+    
+    if y_proba is not None:
+        try:
+            roc_auc = roc_auc_score(y_true, y_proba, multi_class="ovr")
+        except ValueError:
+            roc_auc = None
+    else:
+        roc_auc = None
+    
+    return {
+        "accuracy": acc,
+        "f1_macro": f1,
+        "roc_auc_ovr": roc_auc
+    }

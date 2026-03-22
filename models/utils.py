@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, accuracy_score
 
+from models.advanced_augmentation import mixup_data, cutmix_data
+
 PALETTE = {
     'train':  '#2E86AB',
     'valid':  '#E84855',
@@ -102,6 +104,24 @@ def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, s
                 root=train_dir,
                 transform=augmentation_train_transform,
             )
+        
+        elif augmentation == "cutout":
+            adv_augmentation_train_transform = transforms.Compose([
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=cinic_mean_RGB, std=cinic_std_RGB),
+                transforms.RandomErasing(
+                    p=0.5,
+                    scale=(0.02, 0.33),
+                    ratio=(0.3, 3.3),
+                    value=0,
+                )
+            ])
+
+            train_ds = datasets.ImageFolder(
+                root=train_dir,
+                transform=adv_augmentation_train_transform,
+            )
 
         else:
             raise ValueError(f"Unknown augmentation type: {augmentation}")
@@ -114,11 +134,10 @@ def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, s
     return train_loader, valid_loader, test_loader
 
 
-
-def train_epoch(model, dataloader, criterion, optimizer, device):
+def train_epoch(model, dataloader, criterion, optimizer, device, advanced_aug=None, alpha=0.4):
 
     '''
-    Trains the model for one epoch.
+    Trains the model for one epoch with optional advanced augmentation.
 
     Args:
         model (nn.Module): The model to be trained.
@@ -126,6 +145,8 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
         criterion: Loss function.
         optimizer: Optimization algorithm.
         device: Device to run the training on (e.g., 'cuda' or 'cpu').
+        advanced_aug (str or None): Advanced augmentation method to apply
+        alpha (float): MixUp hyperparameter controlling strength of mixing.
 
     Returns:
         float: Average loss for the epoch.
@@ -137,10 +158,20 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
     for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
 
+        if advanced_aug == "mixup":
+            inputs, targets_a, targets_b, lam = mixup_data(inputs=inputs, targets=labels, alpha=alpha)
+        elif advanced_aug == "cutmix":
+            inputs, targets_a, targets_b, lam = cutmix_data(inputs, labels, alpha)
+
         optimizer.zero_grad()
 
         outputs = model(inputs)
-        loss = criterion(outputs, labels)
+
+        if advanced_aug in ["mixup", "cutmix"]:
+            loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+        else:
+            loss = criterion(outputs, labels)
+
         loss.backward()
         optimizer.step()
 
@@ -179,7 +210,8 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
 
 def train(model, train_loader, valid_loader, criterion, optimizer, scheduler=None, device=None, \
-          num_epochs=20, verbose=True, verbose_interval=1, checkpoint_name=None):
+          num_epochs=20, verbose=True, verbose_interval=1, checkpoint_name=None,
+          advanced_aug=None, alpha=0.4):
     
     '''
     Train the model over multiple epochs and track training/validation metrics.
@@ -196,7 +228,15 @@ def train(model, train_loader, valid_loader, criterion, optimizer, scheduler=Non
     best_acc = 0.0
 
     for epoch in range(num_epochs):
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss = train_epoch(
+            model, 
+            train_loader, 
+            criterion, 
+            optimizer, 
+            device,
+            advanced_aug=advanced_aug,
+            alpha=alpha,
+        )
         valid_loss, valid_acc = evaluate_epoch(model, valid_loader, criterion, device)
 
         if scheduler is not None:

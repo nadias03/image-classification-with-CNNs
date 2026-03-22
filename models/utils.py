@@ -40,7 +40,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, seed=42):
+def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, seed=42, augmentation=None):
 
     '''
     Create DataLoaders for training, validation, and test datasets.
@@ -83,6 +83,29 @@ def get_loaders(train_dir, valid_dir, test_dir, batch_size=32, image_size=224, s
         root=test_dir,
         transform=transform,
     )
+
+    if augmentation is not None:
+        if augmentation == "none":
+            pass
+
+        elif augmentation == "standard":
+            augmentation_train_transform = transforms.Compose([
+                transforms.Resize((image_size, image_size)),
+                transforms.RandomCrop(image_size, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(10),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=cinic_mean_RGB, std=cinic_std_RGB)
+            ])
+
+            train_ds = datasets.ImageFolder(
+                root=train_dir,
+                transform=augmentation_train_transform,
+            )
+
+        else:
+            raise ValueError(f"Unknown augmentation type: {augmentation}")
+
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     valid_loader = DataLoader(valid_ds, batch_size=batch_size, shuffle=False)

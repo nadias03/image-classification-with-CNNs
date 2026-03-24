@@ -161,7 +161,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, advanced_aug=No
         if advanced_aug == "mixup":
             inputs, targets_a, targets_b, lam = mixup_data(inputs=inputs, targets=labels, alpha=alpha)
         elif advanced_aug == "cutmix":
-            inputs, targets_a, targets_b, lam = cutmix_data(inputs, labels, alpha)
+            inputs, targets_a, targets_b, lam = cutmix_data(inputs=inputs, targets=labels, alpha=alpha)
 
         optimizer.zero_grad()
 

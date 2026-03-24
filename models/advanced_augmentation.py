@@ -29,7 +29,7 @@ def mixup_data(inputs, targets, alpha=0.4):
 
     batch_size = inputs.size(0)
 
-    index = torch.randperm(batch_size, device=inputs.device)
+    index = torch.randperm(batch_size).to(inputs.device)
 
     mixed_inputs = lam * inputs + (1 - lam) * inputs[index]
 
@@ -93,7 +93,7 @@ def cutmix_data(inputs, targets, alpha=0.4):
         lam = 1.0
 
     batch_size = inputs.size(0)
-    index = torch.randperm(batch_size, device=inputs.device)
+    index = torch.randperm(batch_size).to(inputs.device)
 
     targets_a = targets
     targets_b = targets[index]

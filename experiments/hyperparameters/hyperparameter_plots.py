@@ -9,7 +9,7 @@ from matplotlib.lines import Line2D
 PALETTE = {
     'train':  '#2E86AB',
     'valid':  '#E84855',
-    'bg':     '#F8F9FA',
+    'bg':     '#FFFFFF',
     'grid':   '#E0E0E0',
 }
 
